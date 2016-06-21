@@ -108,6 +108,12 @@ module Protobuf
         repeated? && options.key?(:packed)
       end
 
+      def primitive?
+        wire_type == ::Protobuf::WireType::VARINT ||
+          wire_type == ::Protobuf::WireType::FIXED64 ||
+          wire_type == ::Protobuf::WireType::FIXED32
+      end
+
       def repeated?
         rule == :repeated
       end
@@ -121,20 +127,24 @@ module Protobuf
       end
 
       # FIXME: need to cleanup (rename) this warthog of a method.
-      def set(message_instance, bytes)
-        return message_instance[name] = decode(bytes) unless repeated?
-        return message_instance[name] << decode(bytes) unless packed?
+      def set(message_instance, wire_type, bytes)
+        array = []
+        if primitive? and wire_type == ::Protobuf::WireType::LENGTH_DELIMITED
+          stream = StringIO.new(bytes)
 
-        array = message_instance[name]
-        stream = StringIO.new(bytes)
-
-        if wire_type == ::Protobuf::WireType::VARINT
-          array << Varint.decode(stream) until stream.eof?
-        elsif wire_type == ::Protobuf::WireType::FIXED64
-          array << stream.read(8) until stream.eof?
-        elsif wire_type == ::Protobuf::WireType::FIXED32
-          array << stream.read(4) until stream.eof?
+          if self.wire_type == ::Protobuf::WireType::VARINT
+            array << Varint.decode(stream) until stream.eof?
+          elsif self.wire_type == ::Protobuf::WireType::FIXED64
+            array << stream.read(8) until stream.eof?
+          elsif self.wire_type == ::Protobuf::WireType::FIXED32
+            array << stream.read(4) until stream.eof?
+          end
+        else
+          array << decode(bytes)
         end
+
+        return message_instance[name] = array[0] unless repeated?
+        message_instance[name].concat(array)
       end
 
       def setter
